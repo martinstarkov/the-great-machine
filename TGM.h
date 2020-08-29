@@ -38,7 +38,7 @@ namespace tgm {
 
     class Species : public BaseSpecies {
     public:
-        Species(Ecosystem& ecosystem, std::string name, Population population, Rates rates) : ecosystem{ ecosystem }, name{ name }, population{ population }, original_rates{ rates }, rates{ rates } {}
+        Species(Ecosystem& ecosystem, std::string name, Population population, Rates rates) : ecosystem{ ecosystem }, name{ name }, population{ population }, original_rates{ rates } {}
         ~Species() {}
         virtual const std::string GetName() const override final {
             return name;
@@ -46,8 +46,8 @@ namespace tgm {
         virtual const Population GetPopulation() const override final {
             return population;
         }
-        virtual const float GetImpactOn(std::string name) const override final {
-            auto it = impact_on_others.find(name);
+        virtual const float GetImpactOn(std::string other_name) const override final {
+            auto it = impact_on_others.find(other_name);
             if (it != std::end(impact_on_others)) {
                 return it->second; // scale impact by population? figure this out later
             }
@@ -58,17 +58,13 @@ namespace tgm {
             impact_on_others[name] = impact;
         }
     private:
-        void GrowPopulation() {
-            population = static_cast<Population>(round(population * rates.growth));
-        }
-        void DecayPopulation() {
-            population = static_cast<Population>(round(population * rates.decay));
+        void ModifyPopulation(float rate) {
+            population = static_cast<Population>(round(population * rate));
         }
         Ecosystem& ecosystem;
         const std::string name = "Unknown Species";
         Population population = 0;
         const Rates original_rates;
-        Rates rates;
         std::unordered_map<std::string, float> impact_on_others;
     };
 
@@ -122,22 +118,23 @@ namespace tgm {
 
     void Species::Update() {
         bool decision = internal::RandomBool();
+        Rates rates = original_rates;
         if (decision) {
-            rates.growth = original_rates.growth;
+            /*
             auto prey = ecosystem.GetPrey(impact_on_others);
             for (auto& p : prey) {
                 rates.growth += p->GetImpactOn(name);
             }
+            */
             //LOG(name << " growth rate: " << rates.growth);
-            GrowPopulation();
+            ModifyPopulation(rates.growth);
         } else {
-            rates.decay = original_rates.decay;
             auto predators = ecosystem.GetPredators(name);
             for (auto& p : predators) {
                 rates.decay -= p->GetImpactOn(name);
             }
             //LOG(name << " decay rate: " << rates.decay);
-            DecayPopulation();
+            ModifyPopulation(rates.decay);
         }
     }
 

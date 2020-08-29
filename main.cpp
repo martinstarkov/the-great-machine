@@ -2,16 +2,21 @@
 
 int main() {
 	tgm::Ecosystem ecosystem;
-	auto grass = ecosystem.AddSpecies("grass", 100, { 1.01f, 1.0f });
-	auto bunny = ecosystem.AddSpecies("bunny", 100, { 1.05f, 0.98f });
-	bunny->AddImpactOn("grass", 0.01f);
-	ecosystem.PrintSpeciesPopulations("bunny", "grass");
+	auto grass = ecosystem.AddSpecies("grass", 5000, { 1.08f, 0.99f });
+	auto bunny = ecosystem.AddSpecies("bunny", 1000, { 1.01f, 0.99f });
+	auto wolfy = ecosystem.AddSpecies("wolfy", 200, { 1.01f, 0.99f });
+	auto human = ecosystem.AddSpecies("human", 10, { 1.9f, 0.99f });
+	wolfy->AddImpactOn("bunny", 0.1f);
+	wolfy->AddDependenceOn("bunny", 0.01f);
+	bunny->AddImpactOn("grass", 0.05f);
+	bunny->AddDependenceOn("grass", 0.05f);
+	human->AddImpactOn("grass", 0.1f);
+	human->AddImpactOn("wolf", 0.05f);
+	ecosystem.PrintSpeciesPopulations();
 	std::cin.get();
-	int counter = 0;
-	while (counter < 100) {
+	while (true) {
 		ecosystem.Update();
-		ecosystem.PrintSpeciesPopulations("bunny", "grass");
-		++counter;
+		ecosystem.PrintSpeciesPopulations();
 		std::cin.get();
 	}
 }

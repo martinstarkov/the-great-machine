@@ -20,8 +20,8 @@ namespace tgm {
     using Population = std::uint32_t;
 
     struct Rates {
-        float growth = 1.0f;
-        float decay = 1.0f;
+        float growth;
+        float decay;
     };
 
     class BaseSpecies {
@@ -29,8 +29,10 @@ namespace tgm {
         virtual const std::string GetName() const = 0;
         virtual const Population GetPopulation() const = 0;
         virtual const float GetImpactOn(std::string name) const = 0;
+        virtual const float GetDependenceOn(std::string name) const = 0;
         virtual void Update() = 0;
         virtual void AddImpactOn(std::string name, float impact) = 0;
+        virtual void AddDependenceOn(std::string name, float dependence) = 0;
         virtual ~BaseSpecies() {}
     };
 
@@ -53,19 +55,30 @@ namespace tgm {
             }
             return 0;
         }
+        virtual const float GetDependenceOn(std::string other_name) const override final {
+            auto it = dependence_on_others.find(other_name);
+            if (it != std::end(dependence_on_others)) {
+                return it->second;
+            }
+            return 0;
+        }
         virtual void Update() override final;
         virtual void AddImpactOn(std::string name, float impact) override final {
             impact_on_others[name] = impact;
         }
+        virtual void AddDependenceOn(std::string name, float dependence) override final {
+            dependence_on_others[name] = dependence;
+        }
     private:
         void ModifyPopulation(float rate) {
-            population = static_cast<Population>(round(population * rate));
+            population = static_cast<Population>(floor(population * rate));
         }
         Ecosystem& ecosystem;
         const std::string name = "Unknown Species";
         Population population = 0;
         const Rates original_rates;
         std::unordered_map<std::string, float> impact_on_others;
+        std::unordered_map<std::string, float> dependence_on_others;
     };
 
     class Ecosystem {
@@ -76,12 +89,14 @@ namespace tgm {
             all_species[name] = shared;
             return shared;
         }
-        std::vector<std::shared_ptr<BaseSpecies>> GetPrey(std::unordered_map<std::string, float>& impacts_on_others) {
+        std::vector<std::shared_ptr<BaseSpecies>> GetPrey(std::unordered_map<std::string, float>& dependence_on_others) {
             std::vector<std::shared_ptr<BaseSpecies>> prey;
-            for (auto& pair : impacts_on_others) {
+            for (auto& pair : dependence_on_others) {
                 auto it = all_species.find(pair.first);
                 if (it != std::end(all_species)) {
-                    prey.push_back(it->second);
+                    if (it->second->GetPopulation() > 0) {
+                        prey.push_back(it->second);
+                    }
                 }
             }
             return prey;
@@ -90,7 +105,9 @@ namespace tgm {
             std::vector<std::shared_ptr<BaseSpecies>> predators;
             for (auto& pair : all_species) {
                 if (pair.second->GetImpactOn(name)) {
-                    predators.push_back(pair.second);
+                    if (pair.second->GetPopulation() > 0) {
+                        predators.push_back(pair.second);
+                    }
                 }
             }
             return predators;
@@ -112,6 +129,11 @@ namespace tgm {
         void PrintSpeciesPopulations(TArgs... args) {
             (PrintSpeciesPopulation(args), ...);
         }
+        void PrintSpeciesPopulations() {
+            for (auto& pair : all_species) {
+                PrintSpeciesPopulation(pair.first);
+            }
+        }
     private:
         std::unordered_map<std::string, std::shared_ptr<BaseSpecies>> all_species;
     };
@@ -120,12 +142,10 @@ namespace tgm {
         bool decision = internal::RandomBool();
         Rates rates = original_rates;
         if (decision) {
-            /*
-            auto prey = ecosystem.GetPrey(impact_on_others);
+            auto prey = ecosystem.GetPrey(dependence_on_others);
             for (auto& p : prey) {
-                rates.growth += p->GetImpactOn(name);
+                rates.growth += p->GetDependenceOn(name);
             }
-            */
             //LOG(name << " growth rate: " << rates.growth);
             ModifyPopulation(rates.growth);
         } else {

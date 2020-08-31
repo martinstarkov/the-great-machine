@@ -7,6 +7,7 @@
 #include <memory>
 #include <random>
 #include <cassert>
+#include <map>
 
 #define LOG(x) { std::cout << x << std::endl; }
 #define LOG_(x) { std::cout << x; }
@@ -15,12 +16,13 @@ namespace tgm {
 
     using Population = std::size_t;
     using SpeciesID = std::size_t;
-    using ResourceIDs = std::vector<SpeciesID>;
+    using ResourceBitset = std::vector<bool>;
     using Resources = std::vector<std::string>;
     
     class Ecosystem;
 
     constexpr SpeciesID NULL_SPECIES = 0;
+    constexpr SpeciesID FIRST_VALID_SPECIES = NULL_SPECIES + 1;
 
     namespace internal {
 
@@ -36,12 +38,10 @@ namespace tgm {
         }
 
         class MonteCarlo {
-
         public:
             MonteCarlo(Ecosystem& ecosystem, std::size_t trials, std::size_t steps);
-
         private:
-
+            // TODO: Store some properties here later and allow printing them on request?
         };
 
 
@@ -52,6 +52,19 @@ namespace tgm {
         EXTINCT,
         CAPPED
     };
+
+    // Allows for printing states as long as you add new states to the INSERT_ELEMENT list
+    std::ostream& operator<<(std::ostream& out, const State value) {
+        static std::map<State, std::string> strings;
+        if (strings.size() == 0) {
+            #define INSERT_ELEMENT(p) strings[p] = #p
+            INSERT_ELEMENT(State::FLUCTUATING);
+            INSERT_ELEMENT(State::EXTINCT);
+            INSERT_ELEMENT(State::CAPPED);
+            #undef INSERT_ELEMENT
+        }
+        return out << strings[value];
+    }
 
     struct Genes {
         Genes() = default;
@@ -65,24 +78,65 @@ namespace tgm {
 
     public:
         Species() = delete;
-        Species(Ecosystem& ecosystem, SpeciesID id, const std::string& name, Population population, Genes&& genes, const Resources& resources);
+        Species(Ecosystem& ecosystem, SpeciesID id, const std::string& name, Population population, Genes&& genes, const Resources& resource_names) : ecosystem{ ecosystem }, id{ id }, name{ name }, original_population{ population }, population{ original_population }, original_genes{ genes }, genes{ original_genes }, mutated{ 0 }, death_count{ 0 } {
+            AddInitialResources(resource_names);
+        }
      
-
         const std::string& GetName() const {
             return name;
+        }
+
+        const Genes& GetGenes() const {
+            return genes;
         }
 
         const Population GetPopulation() const {
             return population;
         }
 
+        const Population GetOriginalPopulation() const {
+            return original_population;
+        }
+
         const Population GetMutated() const {
             return mutated;
         }
 
-        const ResourceIDs GetResources() const {
+        const Population GetDeathCount() const {
+            return death_count;
+        }
+
+        const auto GetNetGrowth() const {
+            return static_cast<std::int64_t>(population - original_population);
+        }
+
+        const Population GetTheoreticalCarryingCapacity() const {
+            float carrying_capacity = (genes.replication_chance * (1.0f - genes.mutation_chance) - genes.death_chance) / genes.crowding_factor;
+            // if carrying capacity is negative, it the population can theoretically not support any life
+            return carrying_capacity <= 0 ? 0 : static_cast<Population>(roundf(carrying_capacity));
+        }
+
+        void Reset() {
+            population = original_population;
+            genes = original_genes;
+            death_count = 0;
+            mutated = 0;
+        }
+
+        const ResourceBitset& GetResources() const {
             return resources;
         }
+
+        bool HasResource(SpeciesID species_id) const {
+            if (species_id < resources.size()) {
+                return resources[species_id];
+            }
+            return false;
+        }
+
+        void AddResource(const std::string& name);
+
+        void AddInitialResources(const Resources& resource_names);
 
         const SpeciesID GetID() const {
             return id;
@@ -94,22 +148,33 @@ namespace tgm {
 
     private:
 
+        float GetWeightedCrowdingFactor();
+
         void ModifyPopulation() {
-            Population density_death = internal::BinomialSample(population, genes.crowding_factor * population);
+            // Regular crowding_factor
+            //float crowding_factor = genes.crowding_factor * population;
+            // Crowding_factors of all competitors weighted by their populations
+            float w_crowding_factor = GetWeightedCrowdingFactor();
+            Population crowding_coefficient = internal::BinomialSample(population, w_crowding_factor);
             Population growth = internal::BinomialSample(population, genes.replication_chance);
             Population mutation = internal::BinomialSample(growth, genes.mutation_chance);
             Population decay = internal::BinomialSample(population, genes.death_chance);
-            population += growth - mutation - decay - density_death;
+            Population net_growth = growth - mutation - crowding_coefficient;
+            population += net_growth - decay;
             mutated += mutation;
+            death_count += decay;
         }
 
-        const std::string name;
-        Population population;
-        Genes genes;
-        Population mutated;
-        ResourceIDs resources;
         Ecosystem& ecosystem;
         SpeciesID id;
+        const std::string name;
+        const Population original_population;
+        Population population;
+        Population death_count;
+        Population mutated;
+        const Genes original_genes;
+        Genes genes;
+        ResourceBitset resources;
 
     };
 
@@ -117,7 +182,7 @@ namespace tgm {
 
     public:
         Ecosystem() : state{ State::FLUCTUATING }, total_population{ 0 } {
-            all_species.emplace_back(std::make_unique<Species>(*this, NULL_SPECIES, "null species", 0, Genes{}, Resources{}));
+            all_species.emplace_back(std::make_unique<Species>(*this, NULL_SPECIES, "NULL_SPECIES", 0, Genes{}, Resources{}));
         }
 
         template <typename ...TArgs>
@@ -165,44 +230,85 @@ namespace tgm {
         }
 
         void PrintAllSpecies() {
-            for (auto& element : all_species) {
-                LOG(element->GetName());
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                auto& species = *all_species[i];
+                LOG(species.GetName());
             }
         }
 
-        void PrintSpeciesPopulations() {
-            for (auto& element : all_species) {
-                LOG(element->GetName() << " : " << element->GetPopulation() << ", Mutated: " << element->GetMutated());
+        void PrintSpeciesStatus(const std::string& name) {
+            SpeciesID id = GetSpeciesID(name);
+            assert(HasSpecies(id));
+            PrintSpeciesStatus(*all_species[id]);
+        }
+
+        void PrintAllSpeciesStatuses() {
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                auto& species = *all_species[i];
+                LOG("---------------------");
+                PrintSpeciesStatus(species);
             }
+            LOG("---------------------");
         }
         
-        /*
-        std::vector<Species&> GetCompetitors(const Species& species) {
-            for (auto& resource : species.GetResources()) {
-                for (auto& element : all_species) {
+        auto GetCompetitors(const Species& species) {
+            std::vector<std::reference_wrapper<Species>> competitors;
+            const ResourceBitset& resources = species.GetResources();
+            SpeciesID id = species.GetID();
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < resources.size(); ++i) {
+                for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                    auto& species = *all_species[i];
+                    // Do not add self to competitors
+                    if (species.GetID() != id) {
+                        if (species.HasResource(i)) {
+                            competitors.emplace_back(species);
+                        }
+                    }
                 }
             }
+            return competitors;
         }
-        */
 
         void Update() {
             total_population = 0;
-            for (auto& element : all_species) {
-                element->Update();
-                total_population += element->GetPopulation();
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                auto& species = *all_species[i];
+                species.Update();
+                total_population += species.GetPopulation();
             }
             RecalculateState();
+        }
+
+        void Reset() {
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                auto& species = *all_species[i];
+                species.Reset();
+            }
         }
     
     private:
 
+        void PrintSpeciesStatus(const Species& species) {
+            LOG("Name : " << species.GetName());
+            LOG("Population : " << species.GetPopulation());
+            LOG("Net Growth : " << species.GetNetGrowth());
+            LOG("Mutated: " << species.GetMutated());
+            LOG("Total Deaths: " << species.GetDeathCount());
+            LOG("Theoretical Carrying Capacity : " << species.GetTheoreticalCarryingCapacity());
+        }
+
         void RecalculateState() {
-            for (auto& element : all_species) {
-                if (element->GetPopulation() > 5000) {
-                    state = State::CAPPED;
-                    return;
-                }
-                else if (element->GetPopulation() == 0) {
+            for (SpeciesID i = FIRST_VALID_SPECIES; i < all_species.size(); ++i) {
+                auto& species = *all_species[i];
+                auto cap = species.GetTheoreticalCarryingCapacity();
+                // TODO: Figure out something better for checking that population is not already at carrying capacity
+                // cap exists and population starts below 80% of cap
+                if (cap && species.GetOriginalPopulation() < cap * 0.8) {
+                    if (species.GetPopulation() > cap) {
+                        state = State::CAPPED;
+                        return;
+                    }
+                } else if (species.GetPopulation() == 0) {
                     state = State::EXTINCT;
                     return;
                 }
@@ -226,24 +332,63 @@ namespace tgm {
         Population total_population;
     };
 
-    Species::Species(Ecosystem& ecosystem, SpeciesID id, const std::string& name, Population population, Genes&& genes, const Resources& resources) : ecosystem{ ecosystem }, id{ id }, name{ name }, population{ population }, genes{ genes }, mutated{ 0 } {
-        for (auto& element : resources) {
-            SpeciesID id = ecosystem.GetSpeciesID(element);
-            assert(id != NULL_SPECIES);
-            this->resources.emplace_back(id);
+    void Species::AddInitialResources(const Resources& resource_names) {
+        // Only run this function if resources has not been initialized otherwise it could resize to a smaller size
+        assert(resources.size() == 0);
+        if (resource_names.size() > 0) {
+            std::vector<SpeciesID> ids;
+            SpeciesID max_id = NULL_SPECIES;
+            // Loop through names, add ids to vector for later use and figure out the highest id
+            for (const auto& element : resource_names) {
+                SpeciesID species_id = ecosystem.GetSpeciesID(element);
+                assert(species_id != NULL_SPECIES);
+                max_id = std::max(species_id, max_id);
+                ids.push_back(species_id);
+            }
+            // Grow resources bitset to fit the highest id found (with default values of false)
+            resources.resize(max_id + 1, false);
+            // Set corresponding indexes of IDs to true
+            for (auto& species_id : ids) {
+                resources[species_id] = true;
+            }
         }
+    }
+
+    void Species::AddResource(const std::string& name) {
+        SpeciesID resource_id = ecosystem.GetSpeciesID(name);
+        if (resource_id < resources.size()) {
+            // Important that default value is false as if resource_id is the first resource added and has an id of e.g. 10, all other ids before should be set to false
+            resources.resize(resource_id + 1, false);
+        }
+        resources[resource_id] = true;
+    }
+
+    float Species::GetWeightedCrowdingFactor() {
+        auto competitors = ecosystem.GetCompetitors(*this);
+        float crowding_factor = population * genes.crowding_factor;
+        for (auto& element : competitors) {
+            auto& species = element.get();
+            crowding_factor += species.GetPopulation() * species.GetGenes().crowding_factor;
+        }
+        return crowding_factor;
     }
 
     internal::MonteCarlo::MonteCarlo(tgm::Ecosystem& ecosystem, std::size_t trials, std::size_t steps) {
         std::unordered_map<tgm::State, std::size_t> state_map;
+        std::size_t average_days_to_extinction = 0;
         for (std::size_t i{ 0 }; i < trials; ++i) {
-            for (std::size_t counter{ 0 }; counter < steps; ++counter) {
+            std::size_t step{ 0 };
+            while (step < steps) {
                 ecosystem.Update();
                 if (ecosystem.GetState() != tgm::State::FLUCTUATING) {
                     break;
                 }
+                ++step;
             }
             tgm::State final_state{ ecosystem.GetState() };
+            if (final_state == State::EXTINCT) {
+                average_days_to_extinction += step;
+            }
             auto it = state_map.find(final_state);
             if (it != std::end(state_map)) {
                 ++(it->second);
@@ -251,10 +396,20 @@ namespace tgm {
             else {
                 state_map.emplace(final_state, 1);
             }
-            //LOG(i);
+            LOG("Monte Carlo trial #" << i);
+            // During the last trial, print species information
+            if (i == trials - 1) {
+                LOG("Final trial detailed report: ");
+                ecosystem.PrintAllSpeciesStatuses();
+            }
+            ecosystem.Reset();
         }
+        LOG(steps << " days / trial");
         for (auto& pair : state_map) {
-            LOG(static_cast<int>(pair.first) << ": " << pair.second);
+            LOG(pair.second << " trials ended in " << pair.first);
+            if (pair.first == State::EXTINCT) {
+                LOG("Average days to extinction : " << average_days_to_extinction / pair.second);
+            }
         }
     }
 

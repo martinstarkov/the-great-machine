@@ -1,22 +1,17 @@
 #include "TGM.h"
 
 int main() {
+
 	tgm::Ecosystem ecosystem;
-	auto grass = ecosystem.AddSpecies("grass", 5000, { 1.08f, 0.99f });
-	auto bunny = ecosystem.AddSpecies("bunny", 1000, { 1.01f, 0.99f });
-	auto wolfy = ecosystem.AddSpecies("wolfy", 200, { 1.01f, 0.99f });
-	auto human = ecosystem.AddSpecies("human", 10, { 1.9f, 0.99f });
-	wolfy->AddImpactOn("bunny", 0.1f);
-	wolfy->AddDependenceOn("bunny", 0.01f);
-	bunny->AddImpactOn("grass", 0.05f);
-	bunny->AddDependenceOn("grass", 0.05f);
-	human->AddImpactOn("grass", 0.1f);
-	human->AddImpactOn("wolf", 0.05f);
-	ecosystem.PrintSpeciesPopulations();
-	std::cin.get();
+	auto bunny = ecosystem.AddSpecies("bunny", 1000, tgm::Genes{ 0.12f, 0.12f, 0.01f, 0.0001f }, tgm::Resources{});
+	//auto wolf = ecosystem.AddSpecies("wolf", 100, tgm::Genes{ 0.2f,0.3f,0.5f });
+
+	tgm::internal::MonteCarlo(ecosystem, 100, 700);
+
+	/*
 	while (true) {
+		std::cin.get();
 		ecosystem.Update();
 		ecosystem.PrintSpeciesPopulations();
-		std::cin.get();
-	}
+	}*/
 }

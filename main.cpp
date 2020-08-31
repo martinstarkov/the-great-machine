@@ -4,9 +4,15 @@
 
 #include <windows.h>
 
-constexpr int population = 20;
+constexpr int population = 5;
+constexpr int grass_population = 20;
 constexpr int width = 52;
 constexpr int height = 26;
+
+enum class Species : std::size_t {
+	AIR,
+	RABBIT,
+};
 
 template <typename T, std::enable_if_t<std::is_floating_point<T>::value || std::is_integral<T>::value, int> = 0>
 struct V2 {
@@ -25,8 +31,7 @@ struct Individual {
 	DifferentiableRandom<T> dx{ W_min, W_max };
 	DifferentiableRandom<T> dy{ H_min, H_max };
 	V2<T> pos;
-	Individual() : Individual(V2<T>::Random(W_min, W_max, H_min, H_max)) {
-	}
+	Individual() : Individual(V2<T>::Random(W_min, W_max, H_min, H_max)) {}
 	Individual(V2<T> init_pos, V2<T> min_vel = { -1, -1 }, V2<T> max_vel = { 1, 1 }, V2<T> min_accel = { -2, -2 }, V2<T> max_accel = { 2, 2 }) {
 		dx.SetInitialValue(init_pos.x);
 		dy.SetInitialValue(init_pos.y);
@@ -48,37 +53,47 @@ struct Individual {
 	}
 };
 
+using Level = std::vector<std::vector<Species>>;
+using LevelBitset = std::vector<std::vector<bool>>;
 
 int main() {
 
-	tgm::Ecosystem ecosystem;
-	auto bunny = ecosystem.AddSpecies("bunny", 1000, tgm::Genes{ 0.12f, 0.12f, 0.01f, 0.0001f }, tgm::Resources{});
-	//auto wolf = ecosystem.AddSpecies("wolf", 100, tgm::Genes{ 0.2f,0.3f,0.5f });
-
-	
-
-	std::vector<std::vector<bool>> level(height, std::vector<bool>(width, false));
+	Level level(height, std::vector<Species>(width, Species::AIR));
 
 	std::vector<Individual<int>> individuals(population);
+
+	LevelBitset grass_level(height, std::vector<bool>(width, false));
+
+	for (auto i = 0; i < grass_population; ++i) {
+		auto pos = V2<int>::Random(0, width - 1, 0, height - 1);
+		grass_level[pos.y][pos.x] = true;
+	}
 
 	while(true) {
 		system("cls");
 		for (auto& individual : individuals) {
-			level[individual.pos.y][individual.pos.x] = true;
+			auto& pos = individual.pos;
+			level[pos.y][pos.x] = Species::RABBIT;
+			if (grass_level[pos.y][pos.x]) {
+				grass_level[pos.y][pos.x] = false;
+			}
 			individual.Update();
 		}
 		for (auto y = 0; y < level.size(); ++y) {
 			for (auto x = 0; x < level[y].size(); ++x) {
-				if (level[y][x]) {
+				if (level[y][x] == Species::AIR) {
+					if (grass_level[y][x]) {
+						LOG_("X");
+					} else {
+						LOG_(" ");
+					}
+				} else if (level[y][x] == Species::RABBIT) {
 					LOG_("#");
-				} else {
-					LOG_(" ");
 				}
 			}
 			LOG("");
 		}
-		// clear previous locations
-		std::fill(level.begin(), level.end(), std::vector<bool>(width, false));
+		std::fill(level.begin(), level.end(), std::vector<Species>(width, Species::AIR));
 	}
 
 	//tgm::internal::MonteCarlo(ecosystem, 100, 700);

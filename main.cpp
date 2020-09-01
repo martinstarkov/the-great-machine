@@ -3,15 +3,25 @@
 #include "DifferentiableRandom.h"
 
 #include <windows.h>
+#include <set>
 
-constexpr int population = 5;
-constexpr int grass_population = 20;
+constexpr int rabbit_population = 30;
+constexpr int grass_population = 30;
+constexpr int weed_population = 50;
+
 constexpr int width = 52;
 constexpr int height = 26;
 
-enum class Species : std::size_t {
-	AIR,
-	RABBIT,
+constexpr int min_x = 0;
+constexpr int min_y = 0;
+constexpr int max_x = width - 1;
+constexpr int max_y = height - 1;
+
+enum class TrophicLevel : std::size_t {
+	PRIMARY_PRODUCER,
+	PRIMARY_PREDATOR,
+	SECONDARY_PREDATOR,
+	TERTIARY_PREDATOR
 };
 
 template <typename T, std::enable_if_t<std::is_floating_point<T>::value || std::is_integral<T>::value, int> = 0>
@@ -26,82 +36,208 @@ struct V2 {
 	}
 };
 
-template <typename T, T W_min = 0, T W_max = width - 1, T H_min = 0, T H_max = height - 1, std::enable_if_t<std::is_floating_point<T>::value || std::is_integral<T>::value, int> = 0>
-struct Individual {
-	DifferentiableRandom<T> dx{ W_min, W_max };
-	DifferentiableRandom<T> dy{ H_min, H_max };
-	V2<T> pos;
-	Individual() : Individual(V2<T>::Random(W_min, W_max, H_min, H_max)) {}
-	Individual(V2<T> init_pos, V2<T> min_vel = { -1, -1 }, V2<T> max_vel = { 1, 1 }, V2<T> min_accel = { -2, -2 }, V2<T> max_accel = { 2, 2 }) {
+using V2_int = V2<int>;
+
+class BaseSpecies {
+public:
+	virtual const TrophicLevel GetTrophicLevel() const = 0;
+	virtual const char GetCharacter() const = 0;
+	virtual void Update() = 0;
+};
+
+class Species : public BaseSpecies {
+public:
+	Species(TrophicLevel trophic_level, char character) : trophic_level{ trophic_level }, character{ character } {}
+	virtual const TrophicLevel GetTrophicLevel() const override final {
+		return trophic_level;
+	}
+	virtual const char GetCharacter() const override final {
+		return character;
+	}
+	virtual void Update() override {}
+private:
+	TrophicLevel trophic_level;
+	char character;
+	bool alive;
+};
+
+
+using IntegerRandomizer = DifferentiableRandom<int>;
+
+class Individual : public Species {
+public:
+	Individual(TrophicLevel level, char character, V2_int init_pos = V2_int::Random(min_x, max_x, min_y, max_y)) : Species{ level, character } {
 		dx.SetInitialValue(init_pos.x);
 		dy.SetInitialValue(init_pos.y);
 		// order of layer addition matters
-		dx.AddDifferentiableLayer(min_vel.x, max_vel.x);
-		dx.AddDifferentiableLayer(min_accel.x, max_accel.x);
-		dy.AddDifferentiableLayer(min_vel.y, max_vel.y);
-		dy.AddDifferentiableLayer(min_accel.y, max_accel.y);
-		SetNewPos();
+		SetLayers(1, 2);
+		UpdatePosition();
 	}
-	void Update() {
+	virtual void Update() override {
 		dx.Advance(1);
 		dy.Advance(1);
-		SetNewPos();
+		UpdatePosition();
 	}
-	void SetNewPos() {
+	V2_int& GetPosition() {
+		return pos;
+	}
+	const V2_int GetPosition() const {
+		return pos;
+	}
+	const bool IsAlive() const {
+		return alive;
+	}
+	void Kill() {
+		alive = false;
+	}
+private:
+	void SetLayers(int vel, int accel) {
+		dx.AddDifferentiableLayer(-vel, vel);
+		dy.AddDifferentiableLayer(-vel, vel);
+		dx.AddDifferentiableLayer(-accel, accel);
+		dy.AddDifferentiableLayer(-accel, accel);
+	}
+	void UpdatePosition() {
 		pos.x = dx.GetValue();
 		pos.y = dy.GetValue();
 	}
+
+	V2_int pos;
+	bool alive = true;
+
+	IntegerRandomizer dx{ min_x, max_x };
+	IntegerRandomizer dy{ min_y, max_y };
+
 };
 
-using Level = std::vector<std::vector<Species>>;
-using LevelBitset = std::vector<std::vector<bool>>;
+class StaticIndividual : public Individual {
+public:
+	StaticIndividual(TrophicLevel level, char character, V2_int init_pos = V2_int::Random(min_x, max_x, min_y, max_y)) : Individual{ level, character, init_pos } {}
+	virtual void Update() override final {
+
+	}
+private:
+};
+
+using SpeciesVector = std::vector<std::shared_ptr<Individual>>;
+
+class Node {
+public:
+	Node() = default;
+	Node(int state) : state{ state } {}
+	const int GetState() const {
+		return state;
+	}
+	void SetState(int new_state) {
+		state = new_state;
+	}
+	void AddIndividual(std::shared_ptr<Individual> individual) {
+		contents.emplace_back(individual);
+	}
+	void Update() {
+		if (contents.size() > 1) {
+			std::sort(contents.begin(), contents.end(), [](std::shared_ptr<Individual> a, std::shared_ptr<Individual> b) { return a->GetTrophicLevel() > b->GetTrophicLevel(); });
+		}
+		PrintChar();
+		Clear();
+	}
+private:
+	void PrintChar() {
+		if (contents.size() == 0) {
+			LOG_(" ");
+		} else {
+			auto& species = *contents.begin();
+			assert(species != nullptr);
+			LOG_(species->GetCharacter());
+			// vector is sorted in ascending order of trophic levels;
+			// TODO: For equal trophic level species, use traits to determine survivor
+			// TODO: Add traits effect on chances of survival here
+			// if highest trophic level is not a producer, kill the rest of the lower / equal trophic level species
+			if (contents.size() > 1 && species->GetTrophicLevel() != TrophicLevel::PRIMARY_PRODUCER) {
+				for (auto it = contents.begin() + 1; it != contents.end(); ++it) {
+					auto& prey = *it;
+					assert(prey != nullptr);
+					prey->Kill();
+					prey.reset();
+				}
+				contents.resize(1);
+			}
+		}
+	}
+	void Clear() {
+		contents.clear();
+	}
+	int state = 0;
+	SpeciesVector contents;
+};
+
+using Row = std::vector<Node>;
+using Grid = std::vector<Row>;
+using Individuals = std::vector<std::shared_ptr<Individual>>;
 
 int main() {
 
-	Level level(height, std::vector<Species>(width, Species::AIR));
+	Grid level(height, Row(width));
 
-	std::vector<Individual<int>> individuals(population);
-
-	LevelBitset grass_level(height, std::vector<bool>(width, false));
-
-	for (auto i = 0; i < grass_population; ++i) {
-		auto pos = V2<int>::Random(0, width - 1, 0, height - 1);
-		grass_level[pos.y][pos.x] = true;
+	Individuals rabbits;
+	rabbits.reserve(rabbit_population);
+	for (auto i = 0; i < rabbit_population; ++i) {
+		rabbits.emplace_back(std::make_shared<Individual>(TrophicLevel::PRIMARY_PREDATOR, '#'));
 	}
 
-	while(true) {
+	Individuals grass;
+	grass.reserve(grass_population);
+	for (auto i = 0; i < grass_population; ++i) {
+		grass.emplace_back(std::make_shared<StaticIndividual>(TrophicLevel::PRIMARY_PRODUCER, 'X'));
+	}
+
+	Individuals weeds;
+	weeds.reserve(weed_population);
+	for (auto i = 0; i < weed_population; ++i) {
+		weeds.emplace_back(std::make_shared<Individual>(TrophicLevel::SECONDARY_PREDATOR, '0'));
+	}
+
+	while (true) {
 		system("cls");
-		for (auto& individual : individuals) {
-			auto& pos = individual.pos;
-			level[pos.y][pos.x] = Species::RABBIT;
-			if (grass_level[pos.y][pos.x]) {
-				grass_level[pos.y][pos.x] = false;
+		for (auto& weed : weeds) {
+			if (weed) {
+				if (!weed->IsAlive()) {
+					weed.reset();
+				} else {
+					auto& pos = weed->GetPosition();
+					level[pos.y][pos.x].AddIndividual(weed);
+					weed->Update();
+				}
 			}
-			individual.Update();
+		}
+		for (auto& g : grass) {
+			if (g) {
+				if (!g->IsAlive()) {
+					g.reset();
+				} else {
+					auto& pos = g->GetPosition();
+					level[pos.y][pos.x].AddIndividual(g);
+					g->Update();
+				}
+			}
+		}
+		for (auto& rabbit : rabbits) {
+			if (rabbit) {
+				if (!rabbit->IsAlive()) {
+					rabbit.reset();
+				} else {
+					auto& pos = rabbit->GetPosition();
+					level[pos.y][pos.x].AddIndividual(rabbit);
+					rabbit->Update();
+				}
+			}
 		}
 		for (auto y = 0; y < level.size(); ++y) {
 			for (auto x = 0; x < level[y].size(); ++x) {
-				if (level[y][x] == Species::AIR) {
-					if (grass_level[y][x]) {
-						LOG_("X");
-					} else {
-						LOG_(" ");
-					}
-				} else if (level[y][x] == Species::RABBIT) {
-					LOG_("#");
-				}
+				auto& node = level[y][x];
+				node.Update();
 			}
 			LOG("");
 		}
-		std::fill(level.begin(), level.end(), std::vector<Species>(width, Species::AIR));
 	}
-
-	//tgm::internal::MonteCarlo(ecosystem, 100, 700);
-
-	/*
-	while (true) {
-		std::cin.get();
-		ecosystem.Update();
-		ecosystem.PrintSpeciesPopulations();
-	}*/
 }

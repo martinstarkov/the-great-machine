@@ -125,7 +125,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)SDL\SDL2\include;$(SolutionDir)SDL\SDL2_image\include;$(SolutionDir)SDL\SDL2_ttf\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)SDL\SDL2\include;$(SolutionDir)SDL\SDL2_image\include;$(SolutionDir)SDL\SDL2_ttf\include;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,7 +143,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)SDL\SDL2\include;$(SolutionDir)SDL\SDL2_image\include;$(SolutionDir)SDL\SDL2_ttf\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)SDL\SDL2\include;$(SolutionDir)SDL\SDL2_image\include;$(SolutionDir)SDL\SDL2_ttf\include;$(SolutionDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -155,11 +155,25 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="engine\Game.cpp" />
+    <ClCompile Include="engine\InputHandler.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="engine\TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DifferentiableRandom.h" />
+    <ClInclude Include="engine\Color.h" />
+    <ClInclude Include="engine\Engine.h" />
+    <ClInclude Include="engine\Flip.h" />
+    <ClInclude Include="engine\Game.h" />
+    <ClInclude Include="engine\InputHandler.h" />
+    <ClInclude Include="engine\TextureManager.h" />
+    <ClInclude Include="engine\Utility.h" />
+    <ClInclude Include="engine\Vector2.h" />
     <ClInclude Include="TGM.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="resources\hashbun.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

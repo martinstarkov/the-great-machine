@@ -1,7 +1,9 @@
+
+#include <Engine/Game.h>
+
 #include "TGM.h"
 
 #include "DifferentiableRandom.h"
-#include "SDL.h"
 
 #include <windows.h>
 #include <set>
@@ -26,20 +28,6 @@ enum class TrophicLevel : std::size_t {
 	TERTIARY_PREDATOR
 };
 
-template <typename T, std::enable_if_t<std::is_floating_point<T>::value || std::is_integral<T>::value, int> = 0>
-struct V2 {
-	static V2 Random(T x_min, T x_max, T y_min, T y_max) {
-		return V2{ internal::GetRandomValue<T>(x_min, x_max), internal::GetRandomValue<T>(y_min, y_max) };
-	}
-	T x = 0, y = 0;
-	friend std::ostream& operator<<(std::ostream& os, const V2& obj) {
-		os << "(" << obj.x << "," << obj.y << ")";
-		return os;
-	}
-};
-
-using V2_int = V2<int>;
-
 class BaseSpecies {
 public:
 	virtual const TrophicLevel GetTrophicLevel() const = 0;
@@ -60,7 +48,7 @@ public:
 private:
 	TrophicLevel trophic_level;
 	char character;
-	bool alive;
+	bool alive = false;
 };
 
 
@@ -140,17 +128,17 @@ public:
 		if (contents.size() > 1) {
 			std::sort(contents.begin(), contents.end(), [](std::shared_ptr<Individual> a, std::shared_ptr<Individual> b) { return a->GetTrophicLevel() > b->GetTrophicLevel(); });
 		}
-		PrintChar();
+		MotherNature();
 		Clear();
 	}
 private:
-	void PrintChar() {
+	void MotherNature() {
 		if (contents.size() == 0) {
-			LOG_(" ");
+			//LOG_(" ");
 		} else {
 			auto& species = *contents.begin();
 			assert(species != nullptr);
-			LOG_(species->GetCharacter());
+			//LOG_(species->GetCharacter());
 			// vector is sorted in ascending order of trophic levels;
 			// TODO: For equal trophic level species, use traits to determine survivor
 			// TODO: Add traits effect on chances of survival here
@@ -174,7 +162,16 @@ private:
 };
 
 using Row = std::vector<Node>;
-using Grid = std::vector<Row>;
+
+struct Grid {
+	Grid(int width, int height) : width{ width }, height{ height } {
+		contents = std::vector<Row>(height, Row(width)); 
+	}
+	std::vector<Row> contents;
+	int width;
+	int height;
+};
+
 using Individuals = std::vector<std::shared_ptr<Individual>>;
 
 template<typename T>
@@ -186,7 +183,9 @@ static void UpdateIndividuals(std::vector<T>& container, Grid& grid) {
 			it = container.erase(it);
 		} else {
 			auto& pos = individual->GetPosition();
-			grid[pos.y][pos.x].AddIndividual(individual);
+			assert(pos.y < grid.height);
+			assert(pos.y < grid.width);
+			grid.contents[pos.y][pos.x].AddIndividual(individual);
 			individual->Update();
 			++it;
 		}
@@ -194,44 +193,82 @@ static void UpdateIndividuals(std::vector<T>& container, Grid& grid) {
 }
 
 static void UpdateGrid(Grid& grid) {
-	for (auto y = 0; y < grid.size(); ++y) {
-		for (auto x = 0; x < grid[y].size(); ++x) {
-			auto& node = grid[y][x];
+	for (auto y = 0; y < grid.contents.size(); ++y) {
+		for (auto x = 0; x < grid.contents[y].size(); ++x) {
+			auto& node = grid.contents[y][x];
 			node.Update();
 		}
-		LOG("");
+		//LOG("");
 	}
 }
 
 // Generates a population of a certain size with random positions on the grid
 template <typename T>
-static Individuals GeneratePopulation(int size, TrophicLevel trophic_level, char character) {
-	Individuals container;
+static void GeneratePopulation(Individuals& container, int size, TrophicLevel trophic_level, char character) {
 	container.reserve(size);
 	for (auto i = 0; i < size; ++i) {
 		container.emplace_back(std::make_shared<T>(trophic_level, character));
 	}
-	return container;
 }
 
-int main(int argc, char* argv[]) {
+using namespace engine;
 
-	Grid level(height, Row(width));
+#define TILE_SIZE V2_int{ Game::GetWidth() / width, Game::GetHeight() / height }
 
-	Individuals grass = GeneratePopulation<StaticIndividual>(grass_population, TrophicLevel::PRIMARY_PRODUCER, 'P');
-
-	Individuals rabbits = GeneratePopulation<Individual>(rabbit_population, TrophicLevel::PRIMARY_PREDATOR, '#');
-
-	Individuals foxes = GeneratePopulation<Individual>(fox_population, TrophicLevel::SECONDARY_PREDATOR, 'F');
-
-	Individuals lions = GeneratePopulation<Individual>(lion_population, TrophicLevel::TERTIARY_PREDATOR, 'L');
-
-	while (true) {
-		system("cls");
+class GameManager {
+public:
+	GameManager(int width, int height) : level{ width, height }, width{ width }, height{ height } {
+		Init();
+	}
+	void Init() {
+		GeneratePopulation<StaticIndividual>(grass, grass_population, TrophicLevel::PRIMARY_PRODUCER, 'P');
+		GeneratePopulation<Individual>(rabbits, rabbit_population, TrophicLevel::PRIMARY_PREDATOR, '#');
+		GeneratePopulation<Individual>(foxes, fox_population, TrophicLevel::SECONDARY_PREDATOR, 'F');
+		GeneratePopulation<Individual>(lions, lion_population, TrophicLevel::TERTIARY_PREDATOR, 'L');
+		TextureManager::Load("rabbit", "resources/hashbun.png");
+	}
+	void Update() {
+		//system("cls");
 		UpdateIndividuals(grass, level);
 		UpdateIndividuals(rabbits, level);
 		UpdateIndividuals(foxes, level);
 		UpdateIndividuals(lions, level);
 		UpdateGrid(level);
 	}
+	void Render() {
+		for (auto& individual : grass) {
+			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, GREEN);
+		}
+		for (auto& individual : rabbits) {
+			TextureManager::DrawRectangle("rabbit", V2_int{ 0, 0 }, V2_int{ 238, 258 }, individual->GetPosition() * TILE_SIZE, TILE_SIZE);
+		}
+		for (auto& individual : foxes) {
+			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, ORANGE);
+		}
+		for (auto& individual : lions) {
+			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, GOLD);
+		}
+	}
+private:
+	int width, height;
+	Grid level;
+	Individuals grass;
+	Individuals rabbits;
+	Individuals foxes;
+	Individuals lions;
+};
+
+int main(int argc, char* argv[]) {
+
+	Game::Init("The Great Machine", 800, 600, 10);
+
+	GameManager game_manager{width, height};
+
+	Game::Loop([&]() {
+		game_manager.Update();
+	}, [&]() {
+		game_manager.Render();
+	});
+
+	return 0;
 }

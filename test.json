@@ -1,10 +1,24 @@
 {
-    "chacteristic": "blue",
-    "dog": 13,
-    "hair": {
-        "color": "red"
+  "chacteristic": "blue",
+  "dog": 13,
+  "hair": {
+    "color": "red"
+  },
+  "eyes": true,
+  "thevoid": null,
+  "phone": 2.5,
+  "my_array": [
+    3.1,
+    10,
+    true,
+    {
+      "jk": "lol",
+      "boolean": false
     },
-    "eyes": true,
-    "thevoid": null,
-    "phone":  2.5
+    {
+      "jk2": "lol",
+      "boolean2": false
+    },
+    "custom"
+  ]
 } 

@@ -67,8 +67,8 @@ public:
 private:
     DifferentiableRandom* provider = nullptr;
     int level{ 0 };
+    T initial_value{ 0 };
     T min;
     T max;
     T value;
-    T initial_value;
 };

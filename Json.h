@@ -4,6 +4,7 @@
 #include <cassert>
 #include <memory>
 #include <fstream>
+#include <algorithm>
 #include <sstream>
 #include <variant>
 #include "TGM.h"
@@ -114,36 +115,31 @@ namespace json {
 		JsonObject() = default;
 		JsonObject(const char* file_path) {
 			std::ifstream file{ file_path };
-			//std::stringstream temp = 
-			std::string raw_data((std::istreambuf_iterator<char>(file)), (std::istreambuf_iterator<char>()));
-			//raw_data = std::get(file); //file.get(*std::cout.rdbuf());
-			LOG(raw_data);
-			if (TestJsonObject(raw_data)) {
-				LOG("Yay it's good");
-				ParseObject(JsonSubstring(raw_data, '{', '}'));
-			} else {
-				LOG("REJECTED");
-				assert(false);
-			}
+			std::string data((std::istreambuf_iterator<char>(file)), (std::istreambuf_iterator<char>()));
+			LOG(data);
+			assert(TestJsonObject(data));
+			ParseObject(JsonSubstring(data, '{', '}'));
 		}
-		JsonObject(const std::string& data) {
+		JsonObject(const std::string& key, const std::string& data) : key{ key } {
 			assert(TestJsonObject(data));
 			ParseObject(JsonSubstring(data, '{', '}'));
 		}
 
-		void AddPair(const std::string& key, JsonType value);
+		void SetKey(int index) {
+			key = std::to_string(index);
+		}
+		friend std::ostream& operator<<(std::ostream& os, const JsonObject& obj);
 
 	private:
+		void AddPair(const std::string& key, JsonType value);
 
-		void ParsePair(const std::string& data, int start);
+		void ParsePair(const std::string& data, std::size_t start = 0);
 
 		void ParseObject(const std::string& data) {
-			//LOG("Data");
-			//LOG(data);
-			ParsePair(data, 0);
+			ParsePair(data);
 		}
 
-		//std::string raw_data;
+		std::string key = "json";
 		std::unordered_map<std::string, JsonType> contents;
 
 	};
@@ -152,21 +148,23 @@ namespace json {
 
 	public:
 		JsonArray() = default;
-		JsonArray(const std::string& data) {
+		JsonArray(const std::string& key, const std::string& data) : key{ key } {
 			assert(TestJsonArray(data));
 			ParseArray(JsonSubstring(data, '[', ']'));
 		}
-
+		void SetKey(int index) {
+			key = std::to_string(index);
+		}
+		friend std::ostream& operator<<(std::ostream& os, const JsonArray& obj);
 	private:
 
 		void AddElement(JsonType value);
 
-		void ParseElement(const std::string& data, int start);
+		void ParseElement(const std::string& data, std::size_t start = 0);
 
-		void ParseArray(const std::string& data) {
-			ParseElement(data, 0);
-		}
+		void ParseArray(const std::string& data);
 
+		std::string key;
 		std::vector<JsonType> contents;
 	};
 
@@ -174,17 +172,18 @@ namespace json {
 
 	public:
 		JsonNull() = default;
-
+		friend std::ostream& operator<<(std::ostream& os, const JsonNull& obj);
 	private:
-		bool other_temp = true;
+		char null;
 	};
 
-	JsonType ParseType(const std::string& value) {
+	// array_index used for objects created inside arrays
+	JsonType ParseType(const std::string& key, const std::string& value) {
 		if (value == "true") return true;
 		if (value == "false") return false;
 		if (value == "null") return JsonNull{};
-		if (TestJsonObject(value)) return JsonObject{ value };
-		if (TestJsonArray(value)) return JsonArray{ value };
+		if (TestJsonArray(value)) return JsonArray{ key, value };
+		if (TestJsonObject(value)) return JsonObject{ key, value };
 		auto new_value = internal::IsIntegral(value);
 		if (std::is_floating_point_v<decltype(new_value)>) return internal::variant_cast(new_value);
 		if (std::is_integral_v<decltype(new_value)>) return internal::variant_cast(new_value);
@@ -192,68 +191,154 @@ namespace json {
 
 	}
 
-	void JsonObject::ParsePair(const std::string& data, int start) {
+	void JsonObject::ParsePair(const std::string& data, std::size_t start) {
 		auto colon = data.find(':', start);
 		assert(colon != std::string::npos);
+		// Optimize this away using sub string algorithm
 		std::size_t line_end;
 		auto comma = data.find(',', colon);
-		if (comma == std::string::npos) {
-			line_end = data.length() - 1 - colon;
-			//LOG("Finished");
-		} else {
-			//consider whitespace
-			line_end = comma - colon - 1;
-			ParsePair(data, comma + 1);
+		auto bracket = data.find('[', colon);
+		if (bracket >= comma) {
+			if (comma == std::string::npos) {
+				line_end = data.length() - colon - 1;
+				//LOG("Finished");
+			} else {
+				//consider whitespace
+				line_end = comma - colon - 1;
+				ParsePair(data, comma + 1);
+			}
+		} else { // array found
+			auto closing_bracket = data.find(']', colon);
+			line_end = closing_bracket - colon;
+			auto next_comma = data.find(',', closing_bracket);
+			if (next_comma != std::string::npos) {
+				ParsePair(data, next_comma + 1);
+			}
 		}
+		// Optimize this away using sub string algorithm
 		auto key = data.substr(start, colon - start);
 		key = internal::Trim(key, ' ');
 		auto value = data.substr(colon + 1, line_end);
 		value = internal::Trim(value, ' ');
-		AddPair(key, ParseType(value));
+		AddPair(key, ParseType(key, value));
 	}
 
-	void JsonArray::ParseElement(const std::string& data, int start) {
+	// TODO: Nested arrays (sub arrays, for e.g. 2d arrays) abort with assert(line_end != std::string::npos); so check it out
+	void JsonArray::ParseElement(const std::string& data, std::size_t start) {
 		std::size_t line_end;
 		auto comma = data.find(',', start);
+		auto curly = data.find('{', start);
+		auto bracket = data.find('[', start);
+		// Optimize this away using sub string algorithm
 		if (comma == std::string::npos) {
-			line_end = data.length() - 1;
-			//LOG("Finished");
-		} else {
-			//consider whitespace
-			line_end = comma - start - 1;
-			ParseElement(data, comma + 1);
+			comma = data.length() + 1;
 		}
-		auto element = data.substr(start, comma - start);
+		if (curly == std::string::npos) {
+			curly = data.length() + 1;
+		}
+		if (bracket == std::string::npos) {
+			bracket = data.length() + 1;
+		}
+		if (bracket >= comma && curly >= comma) {
+			if (comma == data.length() + 1) {
+				line_end = data.length() - 1 - start - 1;
+			} else {
+				line_end = comma - start;
+				ParseElement(data, comma + 1);
+			}
+		} else {
+			// Optimize this away using sub string algorithm
+			line_end = data.length() - 1;
+			if (curly < bracket) {
+				line_end = data.find('}', curly);
+				assert(line_end != std::string::npos);
+				ParseElement(data, line_end + 2);
+				line_end += 1;
+				line_end -= start;
+			} else if (curly >= bracket) {
+				line_end = data.find(']', bracket);
+				assert(line_end != std::string::npos);
+				line_end += 2;
+				line_end -= start;
+			}
+		}
+		auto element = data.substr(start, line_end);
 		element = internal::Trim(element, ' ');
-		AddElement(ParseType(element));
+		AddElement(std::move(ParseType(key, element)));
+	}
+
+	void JsonArray::ParseArray(const std::string& data) {
+		ParseElement(data);
+		// Elements are added to contents in reverse order so it must be flipped after parsing
+		std::reverse(contents.begin(), contents.end());
+		// Set keys of JsonType structures (necessary if you wish to have non empty keys for them)
+		// NOTE: must be done after flipping order
+		for (auto i = 0; i < contents.size(); ++i) {
+			auto& value = contents[i];
+			if (std::holds_alternative<JsonArray>(value)) {
+				std::get<JsonArray>(value).SetKey(i);
+			} else if (std::holds_alternative<JsonObject>(value)) {
+				std::get<JsonObject>(value).SetKey(i);
+			}
+		}
 	}
 
 	void JsonObject::AddPair(const std::string& key, JsonType value) {
 		contents.emplace(key, value);
-		LOG("Key: " << key);
 	}
 
 	void JsonArray::AddElement(JsonType value) {
-		contents.emplace_back(value);
+		static std::size_t size = 0;
+		if (size >= contents.size()) {
+			contents.resize(size + 1);
+		}
+		contents[size] = std::move(value);
+		++size;
+	}
+
+	template<typename T, typename... Ts>
+	std::ostream& operator<<(std::ostream& os, const std::variant<T, Ts...>& v) {
+		std::visit([&os](auto&& arg) {
+			os << arg;
+		}, v);
+		return os;
+	}
+
+	std::ostream& operator<<(std::ostream& os, const JsonObject& obj) {
+		os << obj.key << " : { ";
+		for (auto it = std::begin(obj.contents); it != std::end(obj.contents); ++it) {
+			auto& pair = *it;
+			// do not print keys for objects / arrays
+			if (std::holds_alternative<JsonObject>(pair.second) || std::holds_alternative<JsonArray>(pair.second)) {
+				os << pair.second;
+			} else {
+				os << pair.first << " : " << pair.second;
+			}
+			// No comma for last entry
+			if (it != --std::end(obj.contents)) {
+				os << ", ";
+			}
+		}
+		os << " }";
+		return os;
+	}
+
+	std::ostream& operator<<(std::ostream& os, const JsonArray& obj) {
+		os << obj.key << " : [ ";
+		for (auto it = std::begin(obj.contents); it != std::end(obj.contents); ++it) {
+			os << *it;
+			// No comma for last entry
+			if (it != --std::end(obj.contents)) {
+				os << ", ";
+			}
+		}
+		os << " ]";
+		return os;
+	}
+
+	std::ostream& operator<<(std::ostream& os, const JsonNull& obj) {
+		os << "null";
+		return os;
 	}
 
 } // namespace json
-/*
-auto test = json::Json{ "test.json" };
-
-Json({
-	"chacteristic": "blue",
-	"dog" : 13,
-	"hair" : {
-		"color": "red"
-	},
-	"eyes" : "green"
-	}) {
-	Read() {adjkjfnsfljksjfn
-		test.Add("characteristic", std::string("blue")); 
-		test.Add("dog", int("13")); 
-		test.Add("hair", Json("{"color":"red"}")); 
-		test.Add("hair", JsonArray("["bird","grey"]")); 
-		test.Add("eyes",std::string("green"));
-	}
-} */

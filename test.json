@@ -1,29 +1,10 @@
 {
-    "object": {
-        "array": [], //martin's tips: have all types/structs wrapped in general json type, use templates for flagging what type each is
-                     //think of how to store them in one container
-        "number": 42 //std::variant<type1,type2,type3>   ~~~~~~~  std::any / std::any_cast 
-    },                  //for file reading use std::ofstream and std::ifstream
-    "boolean": true,    //operator overloading for square brackets
-    "number": 1.5,      //seperate struct for json array and json object, think of differences
-    "array": [ true, "hello", 5 ],
-    "string": "cats",
-    "invalid": null
-}
-
-//auto my_json_object = JSONReader("test.json"); //will contain a list of things inside it, can access via [] based on "name"
-
-//auto my_sub_object = my_json_object["object"];
-
-//auto my_array = my_sub_object["array"]; //empty ; contains a list of any type, can access via [] based on index
-
-//float my_number = my_sub_object["number"]; //42
-//float my__other_number = my_json_object["number"]; //1.5
-
-//auto my_other_array = my_json_object["array"];
-
-//bool my_bool = my_other_array[0];
-//std::string my_string = my_other_array[1];
-//auto my_null = my_json_object["invalid"]; //will be able to check is json object is a null object, i.e. will return null if something is wrong
-
-//auto my_other_null = my_json_object["does_not_exist"];
+    "chacteristic": "blue",
+    "dog": 13,
+    "hair": {
+        "color": "red"
+    },
+    "eyes": true,
+    "thevoid": null,
+    "phone":  2.5
+} 

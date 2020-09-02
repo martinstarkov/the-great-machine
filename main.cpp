@@ -5,9 +5,10 @@
 #include <windows.h>
 #include <set>
 
-constexpr int rabbit_population = 30;
-constexpr int grass_population = 30;
-constexpr int weed_population = 50;
+constexpr int grass_population = 50;
+constexpr int rabbit_population = 20;
+constexpr int fox_population = 10;
+constexpr int lion_population = 5;
 
 constexpr int width = 52;
 constexpr int height = 26;
@@ -175,69 +176,76 @@ using Row = std::vector<Node>;
 using Grid = std::vector<Row>;
 using Individuals = std::vector<std::shared_ptr<Individual>>;
 
+template<typename T>
+static void UpdateIndividuals(std::vector<T>& container, Grid& grid) {
+	for (auto it = std::begin(container); it != std::end(container); ) {
+		auto& individual = *it;
+		assert(individual != nullptr);
+		if (!individual->IsAlive()) {
+			it = container.erase(it);
+		} else {
+			auto& pos = individual->GetPosition();
+			grid[pos.y][pos.x].AddIndividual(individual);
+			individual->Update();
+			++it;
+		}
+	}
+}
+
+static void UpdateGrid(Grid& grid) {
+	for (auto y = 0; y < grid.size(); ++y) {
+		for (auto x = 0; x < grid[y].size(); ++x) {
+			auto& node = grid[y][x];
+			node.Update();
+		}
+		LOG("");
+	}
+}
+
+// Generates a population of a certain size with random positions on the grid
+template <typename T>
+static void GeneratePopulation(Individuals& container, int size, TrophicLevel trophic_level, char character) {
+	container.reserve(size);
+	for (auto i = 0; i < size; ++i) {
+		container.emplace_back(std::make_shared<T>(trophic_level, character));
+	}
+}
+
+static void Recursion(int value, int start) {
+	value = value * start;
+	if (value > 1000) {
+		LOG("Finished at " << value);
+	} else {
+		LOG("Value: " << value);
+		Recursion(value, ++start);
+	}
+}
+
 int main() {
 
-	Grid level(height, Row(width));
+	Recursion(1, 1);
 
-	Individuals rabbits;
-	rabbits.reserve(rabbit_population);
-	for (auto i = 0; i < rabbit_population; ++i) {
-		rabbits.emplace_back(std::make_shared<Individual>(TrophicLevel::PRIMARY_PREDATOR, '#'));
-	}
+
+	/*Grid level(height, Row(width));
 
 	Individuals grass;
-	grass.reserve(grass_population);
-	for (auto i = 0; i < grass_population; ++i) {
-		grass.emplace_back(std::make_shared<StaticIndividual>(TrophicLevel::PRIMARY_PRODUCER, 'X'));
-	}
+	GeneratePopulation<StaticIndividual>(grass, grass_population, TrophicLevel::PRIMARY_PRODUCER, 'P');
 
-	Individuals weeds;
-	weeds.reserve(weed_population);
-	for (auto i = 0; i < weed_population; ++i) {
-		weeds.emplace_back(std::make_shared<Individual>(TrophicLevel::SECONDARY_PREDATOR, '0'));
-	}
+	Individuals rabbits;
+	GeneratePopulation<Individual>(rabbits, rabbit_population, TrophicLevel::PRIMARY_PREDATOR, '#');
+
+	Individuals foxes;
+	GeneratePopulation<Individual>(foxes, fox_population, TrophicLevel::SECONDARY_PREDATOR, 'F');
+
+	Individuals lions;
+	GeneratePopulation<Individual>(lions, lion_population, TrophicLevel::TERTIARY_PREDATOR, 'L');
 
 	while (true) {
 		system("cls");
-		for (auto& weed : weeds) {
-			if (weed) {
-				if (!weed->IsAlive()) {
-					weed.reset();
-				} else {
-					auto& pos = weed->GetPosition();
-					level[pos.y][pos.x].AddIndividual(weed);
-					weed->Update();
-				}
-			}
-		}
-		for (auto& g : grass) {
-			if (g) {
-				if (!g->IsAlive()) {
-					g.reset();
-				} else {
-					auto& pos = g->GetPosition();
-					level[pos.y][pos.x].AddIndividual(g);
-					g->Update();
-				}
-			}
-		}
-		for (auto& rabbit : rabbits) {
-			if (rabbit) {
-				if (!rabbit->IsAlive()) {
-					rabbit.reset();
-				} else {
-					auto& pos = rabbit->GetPosition();
-					level[pos.y][pos.x].AddIndividual(rabbit);
-					rabbit->Update();
-				}
-			}
-		}
-		for (auto y = 0; y < level.size(); ++y) {
-			for (auto x = 0; x < level[y].size(); ++x) {
-				auto& node = level[y][x];
-				node.Update();
-			}
-			LOG("");
-		}
-	}
+		UpdateIndividuals(grass, level);
+		UpdateIndividuals(rabbits, level);
+		UpdateIndividuals(foxes, level);
+		UpdateIndividuals(lions, level);
+		UpdateGrid(level);
+	}*/
 }

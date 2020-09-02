@@ -1,6 +1,7 @@
 #include "TGM.h"
 
 #include "DifferentiableRandom.h"
+#include "SDL.h"
 
 #include <windows.h>
 #include <set>
@@ -204,41 +205,26 @@ static void UpdateGrid(Grid& grid) {
 
 // Generates a population of a certain size with random positions on the grid
 template <typename T>
-static void GeneratePopulation(Individuals& container, int size, TrophicLevel trophic_level, char character) {
+static Individuals GeneratePopulation(int size, TrophicLevel trophic_level, char character) {
+	Individuals container;
 	container.reserve(size);
 	for (auto i = 0; i < size; ++i) {
 		container.emplace_back(std::make_shared<T>(trophic_level, character));
 	}
+	return container;
 }
 
-static void Recursion(int value, int start) {
-	value = value * start;
-	if (value > 1000) {
-		LOG("Finished at " << value);
-	} else {
-		LOG("Value: " << value);
-		Recursion(value, ++start);
-	}
-}
+int main(int argc, char* argv[]) {
 
-int main() {
+	Grid level(height, Row(width));
 
-	Recursion(1, 1);
+	Individuals grass = GeneratePopulation<StaticIndividual>(grass_population, TrophicLevel::PRIMARY_PRODUCER, 'P');
 
+	Individuals rabbits = GeneratePopulation<Individual>(rabbit_population, TrophicLevel::PRIMARY_PREDATOR, '#');
 
-	/*Grid level(height, Row(width));
+	Individuals foxes = GeneratePopulation<Individual>(fox_population, TrophicLevel::SECONDARY_PREDATOR, 'F');
 
-	Individuals grass;
-	GeneratePopulation<StaticIndividual>(grass, grass_population, TrophicLevel::PRIMARY_PRODUCER, 'P');
-
-	Individuals rabbits;
-	GeneratePopulation<Individual>(rabbits, rabbit_population, TrophicLevel::PRIMARY_PREDATOR, '#');
-
-	Individuals foxes;
-	GeneratePopulation<Individual>(foxes, fox_population, TrophicLevel::SECONDARY_PREDATOR, 'F');
-
-	Individuals lions;
-	GeneratePopulation<Individual>(lions, lion_population, TrophicLevel::TERTIARY_PREDATOR, 'L');
+	Individuals lions = GeneratePopulation<Individual>(lion_population, TrophicLevel::TERTIARY_PREDATOR, 'L');
 
 	while (true) {
 		system("cls");
@@ -247,5 +233,5 @@ int main() {
 		UpdateIndividuals(foxes, level);
 		UpdateIndividuals(lions, level);
 		UpdateGrid(level);
-	}*/
+	}
 }

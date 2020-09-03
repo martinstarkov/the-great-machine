@@ -85,6 +85,14 @@ namespace json {
 
 	using JsonType = std::variant<JsonObject, JsonArray, JsonNull, std::string, int, double, bool>;
 
+	enum class ParseFlag {
+		COMMA = 0,
+		CURLY,
+		BRACKET,
+		END
+	};
+
+	// Following two functions test if the passed string holds needed characters for object/array
 	static bool TestJsonObject(const std::string& data) {
 		if (data.length() == 0) return false;
 		if (data.find('{') == std::string::npos) return false;
@@ -99,6 +107,7 @@ namespace json {
 		return true;
 	}
 
+	// Creates a substring from the first star_char to the last of end_char then removes new lines.
 	std::string JsonSubstring(const std::string& data, char start_char, char end_char) {
 		auto start = data.find_first_of(start_char);
 		auto end = data.find_last_of(end_char);
@@ -190,6 +199,78 @@ namespace json {
 		return value;
 
 	}
+
+	// recursive function that checks for nested objects or arrays and returns the location of the outermost end 
+	std::size_t JsonObject::NestedSearch(const std::string& data, ParseFlag& flag) {
+		char character;
+		char character_back;
+		if (flag == ParseFlag::CURLY) {
+			character = '{';
+			character_back = '}';
+		} else {
+			character = '[';
+			character_back = ']';
+		}
+		auto open_symbol = data.find(character);
+		if (open_symbol == std::string::npos) open_symbol = data.length() - 1;
+		auto close_symbol = data.find(character_back);
+		if (close_symbol < open_symbol) { // there is no object inside this one
+			return close_symbol;
+		} else { // there is another object
+			// we need to recurse without losing the location of the final }/] in relation to original data
+			//NestedSearch(data, flag);
+		}
+	}
+
+	// Finds whether the object is primitive or not by looking at { and ]
+	void JsonObject::NextImportant(const std::string& data, std::size_t& result, ParseFlag& flag) {
+		//look for comma, {, and [
+		auto first_comma = data.find(',');
+		auto first_curly = data.find('{');
+		auto first_bracket = data.find('[');
+		if (first_comma != std::string::npos) {
+			if (first_comma < result) {
+				flag = ParseFlag::COMMA;
+				result = first_comma;
+			}
+		}
+		if (first_curly != std::string::npos) {
+			if (first_curly < result) {
+				flag = ParseFlag::CURLY;
+				result = first_curly;
+			}
+		}
+		if (first_bracket != std::string::npos) {
+			if (first_bracket < result) {
+				flag = ParseFlag::BRACKET;
+				result = first_bracket;
+			}
+		}
+	}
+
+	void JsonObject::ParsePairTwo(const std::string& data) {
+		auto result = data.length() - 1;
+		ParseFlag flag{ ParseFlag::END };
+		// first we find the key and save it
+		auto colon = data.find(':');
+		assert(colon != std::string::npos);
+		auto key = data.substr(0, colon);
+		key = internal::Trim(key, ' ');
+		// now we remove it and focus on the contents
+		data.substr(colon + 1);
+		NextImportant(data, result, flag);
+		if (flag == ParseFlag::COMMA) {
+			auto value = internal::Trim(data.substr(0, result - 1), ' ');
+			ParsePairTwo(internal::Trim(data.substr(result + 1), ' '));
+		}
+		if (flag == ParseFlag::CURLY) {
+			NestedSearch(data, flag);
+		}
+		if (flag == ParseFlag::BRACKET) {
+			NestedSearch(data, flag);
+		}
+	}
+
 
 	void JsonObject::ParsePair(const std::string& data, std::size_t start) {
 		auto colon = data.find(':', start);

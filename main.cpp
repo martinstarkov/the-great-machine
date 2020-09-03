@@ -1,5 +1,5 @@
 
-#include <Engine/Game.h>
+#include <engine/Engine.h>
 
 #include "TGM.h"
 
@@ -143,14 +143,19 @@ private:
 			// TODO: For equal trophic level species, use traits to determine survivor
 			// TODO: Add traits effect on chances of survival here
 			// if highest trophic level is not a producer, kill the rest of the lower / equal trophic level species
-			if (contents.size() > 1 && species->GetTrophicLevel() != TrophicLevel::PRIMARY_PRODUCER) {
-				for (auto it = contents.begin() + 1; it != contents.end(); ++it) {
+			TrophicLevel predator = species->GetTrophicLevel();
+			if (contents.size() > 1 && predator != TrophicLevel::PRIMARY_PRODUCER) {
+				for (auto it = contents.begin() + 1; it != contents.end();) {
 					auto& prey = *it;
 					assert(prey != nullptr);
-					prey->Kill();
-					prey.reset();
+					if (static_cast<int>(prey->GetTrophicLevel()) < static_cast<int>(predator)) {
+						prey->Kill();
+						prey.reset();
+						it = contents.erase(it);
+					} else {
+						++it;
+					}
 				}
-				contents.resize(1);
 			}
 		}
 	}
@@ -183,8 +188,8 @@ static void UpdateIndividuals(std::vector<T>& container, Grid& grid) {
 			it = container.erase(it);
 		} else {
 			auto& pos = individual->GetPosition();
+			assert(pos.x < grid.width);
 			assert(pos.y < grid.height);
-			assert(pos.y < grid.width);
 			grid.contents[pos.y][pos.x].AddIndividual(individual);
 			individual->Update();
 			++it;
@@ -213,7 +218,7 @@ static void GeneratePopulation(Individuals& container, int size, TrophicLevel tr
 
 using namespace engine;
 
-#define TILE_SIZE V2_int{ Game::GetWidth() / width, Game::GetHeight() / height }
+#define TILE_SIZE V2_int{ Game::ScreenWidth() / width, Game::ScreenHeight() / height }
 
 class GameManager {
 public:
@@ -229,6 +234,16 @@ public:
 	}
 	void Update() {
 		//system("cls");
+		if (InputHandler::MousePressed(MouseButton::LEFT)) {
+			auto mouse_pos = InputHandler::GetMousePosition();
+			auto tile_pos = mouse_pos; 
+			tile_pos.x = static_cast<int>(floor(tile_pos.x / TILE_SIZE.x));
+			tile_pos.y = static_cast<int>(floor(tile_pos.y / TILE_SIZE.y));
+			// Clamp tile_pos to grid
+			if (tile_pos.x < width && tile_pos.y < height) {
+				grass.emplace_back(std::make_shared<StaticIndividual>(TrophicLevel::PRIMARY_PRODUCER, '#', tile_pos));
+			}
+		}
 		UpdateIndividuals(grass, level);
 		UpdateIndividuals(rabbits, level);
 		UpdateIndividuals(foxes, level);
@@ -246,7 +261,7 @@ public:
 			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, ORANGE);
 		}
 		for (auto& individual : lions) {
-			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, GOLD);
+			TextureManager::DrawRectangle(individual->GetPosition() * TILE_SIZE, TILE_SIZE, CYAN);
 		}
 	}
 private:
@@ -260,7 +275,7 @@ private:
 
 int main(int argc, char* argv[]) {
 
-	Game::Init("The Great Machine", 800, 600, 10);
+	Game::Init("The Great Machine", 800, 600, 60);
 
 	GameManager game_manager{width, height};
 

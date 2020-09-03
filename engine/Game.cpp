@@ -1,19 +1,25 @@
 #include "Game.h"
-#include "TextureManager.h"
-#include "InputHandler.h"
+
+#include <cassert>
 
 namespace engine {
 
-SDL_Window* Game::window = nullptr;
-SDL_Renderer* Game::renderer = nullptr;
-bool Game::running = false;
-// Defined in init
-int Game::window_width;
-int Game::window_height;
-int Game::window_x;
-int Game::window_y;
-int Game::frame_rate;
-const char* Game::window_title;
+SDL_Window* Game::window{ nullptr };
+SDL_Renderer* Game::renderer{ nullptr };
+bool Game::running{ false };
+// Defined in Init()
+int Game::window_width{ -1 };
+int Game::window_height{ -1 };
+int Game::window_x{ -1 };
+int Game::window_y{ -1 };
+int Game::frame_rate{ -1 };
+const char* Game::window_title{ "" };
+
+SDL_Window& Game::GetWindow() { assert(window != nullptr); return *window; }
+SDL_Renderer& Game::GetRenderer() { assert(renderer != nullptr); return *renderer; }
+int Game::ScreenWidth() { return window_width; }
+int Game::ScreenHeight() { return window_height; }
+int Game::FPS() { return frame_rate; }
 
 void Game::Init(const char* title, int width, int height, int fps, int x, int y, std::uint32_t window_flags, std::uint32_t renderer_flags) {
 	window_title = title;
@@ -52,5 +58,7 @@ void Game::Clean() {
 	IMG_Quit();
 	SDL_Quit();
 }
+
+void Game::Quit() { running = false; }
 
 } // namespace engine

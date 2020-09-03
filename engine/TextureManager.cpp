@@ -1,4 +1,7 @@
 #include "TextureManager.h"
+
+#include <cassert>
+
 #include "Game.h"
 
 namespace engine {

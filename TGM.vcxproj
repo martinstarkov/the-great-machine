@@ -167,6 +167,7 @@
     <ClInclude Include="engine\Flip.h" />
     <ClInclude Include="engine\Game.h" />
     <ClInclude Include="engine\InputHandler.h" />
+    <ClInclude Include="engine\SDL_includes.h" />
     <ClInclude Include="engine\TextureManager.h" />
     <ClInclude Include="engine\Utility.h" />
     <ClInclude Include="engine\Vector2.h" />

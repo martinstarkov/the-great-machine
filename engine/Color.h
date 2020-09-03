@@ -1,7 +1,8 @@
 #pragma once
 
-#include <SDL_image.h>
 #include <cstdint>
+
+#include "SDL_includes.h"
 
 namespace engine {
 

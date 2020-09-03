@@ -1,6 +1,11 @@
 #pragma once
 
-#include "Engine.h"
+#include <string>
+#include <map>
+
+#include "Color.h"
+#include "Vector2.h"
+#include "Flip.h"
 
 namespace engine {
 

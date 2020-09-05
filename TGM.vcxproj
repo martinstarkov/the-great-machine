@@ -150,6 +150,7 @@
     <ClInclude Include="TGM.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="simple.json" />
     <None Include="test.json" />
     <None Include="tips.json" />
   </ItemGroup>

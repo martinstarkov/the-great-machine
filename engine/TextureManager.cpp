@@ -67,6 +67,56 @@ void TextureManager::DrawRectangle(const std::string& key, V2_int src_position, 
 	SDL_RenderCopyEx(&Game::GetRenderer(), &GetTexture(key), &src_rect, &dest_rect, angle, NULL, static_cast<SDL_RendererFlip>(flip));
 }
 
+void TextureManager::DrawCircle(V2_int center, int radius, Color color) {
+	V2_int position{ radius, 0 };
+    // Printing the initial point on the axes  
+    // after translation 
+	DrawPoint(center + position, color);
+    // When radius is zero only a single 
+    // point will be printed 
+    if (radius > 0) {
+		DrawPoint({ position.x + center.x, -position.y + center.y }, color);
+		DrawPoint({ position.y + center.x, position.x + center.y }, color);
+		DrawPoint({ -position.y + center.x, position.x + center.y }, color);
+    }
+
+    // Initialising the value of P 
+    int P = 1 - radius;
+    while (position.x > position.y) {
+		position.y++;
+
+        // Mid-point is inside or on the perimeter 
+        if (P <= 0)
+            P = P + 2 * position.y + 1;
+
+        // Mid-point is outside the perimeter 
+        else {
+			position.x--;
+            P = P + 2 * position.y - 2 * position.x + 1;
+        }
+
+        // All the perimeter points have already been printed 
+        if (position.x < position.y)
+            break;
+
+        // Printing the generated point and its reflection 
+        // in the other octants after translation 
+		DrawPoint({ position.x + center.x, position.y + center.y }, color);
+		DrawPoint({ -position.x + center.x, position.y + center.y }, color);
+		DrawPoint({ position.x + center.x, -position.y + center.y }, color);
+		DrawPoint({ -position.x + center.x, -position.y + center.y }, color);
+
+        // If the generated point is on the line x = y then  
+        // the perimeter points have alreadposition.y been printed 
+        if (position.x != position.y) {
+			DrawPoint({ position.y + center.x, position.x + center.y }, color);
+			DrawPoint({ -position.y + center.x, position.x + center.y }, color);
+			DrawPoint({ position.y + center.x, -position.x + center.y }, color);
+			DrawPoint({ -position.y + center.x, -position.x + center.y }, color);
+        }
+    }
+}
+
 void TextureManager::Clean() {
 	for (auto& pair : texture_map) {
 		SDL_DestroyTexture(pair.second);

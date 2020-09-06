@@ -1,10 +1,8 @@
-
 #include <engine/Engine.h>
 #include <ecs/ECS.h>
-#include <algorithm>
 #include <iostream>
 #include <vector>
-#include <iterator>
+#include <algorithm>
 #include <list>
 
 //#include "TGM.h"
@@ -337,33 +335,12 @@ struct Range {
 		interactions.push_back(id);
 	}
 	void RemoveInteraction(ecs::EntityId id) {
-		if (interactions.size() > 0) {
-			for (auto it = std::begin(interactions); it != std::end(interactions);) {
-				const auto& p_id = *it;
-				if (p_id == id) {
-					it = interactions.erase(it);
-					return;
-				} else {
-					++it;
-				}
-			}
-		}
-	}
-	bool HasInteraction(ecs::EntityId id) const {
-		if (interactions.size() > 0) {
-			for (auto it = std::begin(interactions); it != std::end(interactions); ++it) {
-				const auto& p_id = *it;
-				if (p_id == id) {
-					return true;
-				}
-			}
-		}
-		return false;
+		interactions.remove(id);
 	}
 	std::size_t Interactions() const {
 		return interactions.size();
 	}
-	std::vector<ecs::EntityId> interactions;
+	std::list<ecs::EntityId> interactions;
 };
 
 struct Color {
@@ -381,43 +358,51 @@ struct Movement {
 		dy.AddDifferentiableLayer(-max_acceleration.y, max_acceleration.y);
 	}
 	V2_int GetPosition() {
-		if (randomize) {
-			dx.Advance(1);
-			dy.Advance(1);
-		}
+		dx.Advance(1);
+		dy.Advance(1);
 		return V2_int{ dx.GetValue(), dy.GetValue() };
 	}
-	bool randomize = true;
+	void Disable() { enabled = false; }
+	void Enable(V2_int current_position) {
+		dx.SetValue(current_position.x);
+		dy.SetValue(current_position.y);
+		enabled = true;
+	}
+	bool IsEnabled() { return enabled; }
 private:
+	bool enabled = true;
 	IntegerRandomizer dx{ 0, engine::Game::ScreenWidth() - 1 };
 	IntegerRandomizer dy{ 0, engine::Game::ScreenHeight() - 1 };
 };
 
-struct Prey {
-	Prey(std::vector<std::string> prey_names) : prey_names{prey_names} {
-
+struct AI {
+	V2_int GetPosition(V2_int current_position, int max_speed) {
+		V2_double direction = (current_position - target_position).unit<double>().opposite();
+		V2_double new_position = static_cast<V2_double>(current_position) + direction * max_speed;
+		return static_cast<V2_int>(new_position);
 	}
+	void Enable(V2_int new_target_position) {
+		target_position = new_target_position;
+		enabled = true;
+	}
+	void Disable() { enabled = false; }
+	bool IsEnabled() { return enabled; }
+private:
+	bool enabled = false;
+	V2_int target_position;
+};
 
+struct Prey {
+	Prey(std::list<std::string>&& prey_names) : prey_names{ std::move(prey_names) } {}
 	void AddPrey(ecs::EntityId id) {
 		prey.push_back(id);
 	}
 	void RemovePrey(ecs::EntityId id) {
-		if (prey.size() > 0) {
-			for (auto it = std::begin(prey); it != std::end(prey);) {
-				const auto& p_id = *it;
-				if (p_id == id) {
-					it = prey.erase(it);
-					return;
-				} else {
-					++it;
-				}
-			}
-		}
+		prey.remove(id);
 	}
 	std::size_t PreyCount() const {
 		return prey.size();
 	}
-
 	void AddSpecies(const std::string& name) {
 		prey_names.push_back(name);
 	}
@@ -426,30 +411,25 @@ struct Prey {
 		prey_names.remove(name);
 	} */
 	bool HasSpecies(const std::string& name) const {
-		if (prey_names.size() > 0) {
-			for (auto it = std::begin(prey_names); it != std::end(prey_names); ++it) {
-				const auto& p_name = *it;
-				if (p_name == name) {
-					return true;
-				}
-			}
+		for (auto& prey_name : prey_names) {
+			if (name.compare(prey_name) == 0) return true;
 		}
 		return false;
 	}
 
-	std::vector<ecs::EntityId> prey;
+	std::list<ecs::EntityId> prey;
 
 private:
-	std::vector<std::string> prey_names;
+	std::list<std::string> prey_names;
 };
 
 struct Species {
-	Species(const std::string& name) : name{ name } {}
+	Species(std::string&& name) : name{ std::move(name) } {}
 	const std::string name;
 };
 
 constexpr std::size_t RABBITS = 5;
-constexpr std::size_t GRASS = 10;
+constexpr std::size_t GRASS = 40;
 
 class GameManager {
 public:
@@ -463,13 +443,14 @@ public:
 		static int range = 60;
 		ecs::EntityId id = ecs.CreateEntity();
 		ecs.AddComponent<Species>(id, "rabbit");
+		ecs.AddComponent<AI>(id);
 		ecs.AddComponent<Position>(id, pos);
 		ecs.AddComponent<Size>(id, size);
 		ecs.AddComponent<Speed>(id, speed);
 		ecs.AddComponent<Range>(id, range);
 		ecs.AddComponent<Color>(id, engine::ORANGE);
 		ecs.AddComponent<Movement>(id, pos, V2_int{ size + speed, size + speed }, V2_int{ size + speed, size + speed });
-		ecs.AddComponent<Prey>(id, std::vector<std::string>{ "grass" });
+		ecs.AddComponent<Prey>(id, std::list<std::string>{ "grass" });
 		return id;
 	}
 	ecs::EntityId MakeGrass(V2_int pos) {
@@ -490,77 +471,91 @@ public:
 		}
 	}
 	void Update() {
+		static auto& cache0 = ecs.AddCache<Position, Speed, AI>();
+		for (auto [id, pos, speed, ai] : cache0.GetEntities()) {
+			if (ai.IsEnabled()) {
+				pos.center = ai.GetPosition(pos.center, speed.radius);
+			}
+		}
 		static auto& cache = ecs.AddCache<Position, Movement>();
 		for (auto [id, pos, rng] : cache.GetEntities()) {
-			// , speed, range, size, rabbit
-			pos.center = rng.GetPosition(); //+= speed.radius * V2_int::Random(-1, 1, -1, 1);
+			if (rng.IsEnabled()) {
+				pos.center = rng.GetPosition();
+			}
 		}
 		static auto& cache2 = ecs.AddCache<Position, Range, Size, Species>();
 		static auto& cache3 = ecs.AddCache<Position, Size, Species>();
 		for (auto [id, pos, range, size, species] : cache2.GetEntities()) {
 			for (auto [id2, pos2, size2, species2] : cache3.GetEntities()) {
-				if (id != id2 && ecs.GetComponent<Species>(id).name != ecs.GetComponent<Species>(id2).name) {
+				if (id != id2 && species.name.compare(species2.name)) {
 					if (engine::math::Distance(pos.center, pos2.center) < size.radius + range.radius + size2.radius) {
-						//range.AddInteraction(id2);
-						ecs.GetComponent<Color>(id).color = engine::BLUE;
+						range.AddInteraction(id2);
+						//ecs.GetComponent<Color>(id).color = engine::BLUE;
 					} else {
-						ecs.GetComponent<Color>(id).color = engine::ORANGE;
-						//if (range.HasInteraction(id2)) {
-						//	range.RemoveInteraction(id2);
-						//}
+						//ecs.GetComponent<Color>(id).color = engine::ORANGE;
+						range.RemoveInteraction(id2);
 					}
 				}
 			}
 		}
-		//static auto& cache4 = ecs.AddCache<Color, Range, Movement, Species>();
-		//for (auto [id, color, range, movement, species] : cache4.GetEntities()) {
-		//	if (range.Interactions() > 0) {
-		//		color.color = engine::RED;
-		//		auto prey = ecs.GetComponentPointer<Prey>(id);
-		//		if (prey) {
-		//			for (auto id2 : range.interactions) {
-		//				if (id != id2) {
-		//					auto individual = ecs.GetComponent<Species>(id2);
-		//					if (species.name != individual.name) {
-		//						if (prey->HasSpecies(individual.name)) {
-		//							prey->AddPrey(id2);
-		//						}
-		//					}
-		//				}
-		//			}
-		//		}
-		//		//movement.randomize = false;
-		//	} else {
-		//		color.color = engine::ORANGE;
-		//	}
-		//}
+		static auto& cache4 = ecs.AddCache<Color, Range, Movement, Species>();
+		for (auto [id, color, range, movement, species] : cache4.GetEntities()) {
+			if (range.Interactions() > 0) {
+				//color.color = engine::RED;
+				auto prey = ecs.GetComponentPointer<Prey>(id);
+				if (prey) {
+					for (auto id2 : range.interactions) {
+						if (id != id2) {
+							auto individual = ecs.GetComponent<Species>(id2);
+							if (species.name.compare(individual.name)) {
+								//LOG(species.name << " interacting with " << individual.name);
+								if (prey->HasSpecies(individual.name)) {
+									prey->AddPrey(id2);
+								}
+							}
+						}
+					}
+				}
+				//movement.randomize = false;
+			} else {
+				//color.color = engine::ORANGE;
+			}
+		}
 
-		//static auto& cache5 = ecs.AddCache<Prey, Color, Speed, Position, Range, Movement>();
-		//for (auto [id, prey, color, speed, position, range, movement] : cache5.GetEntities()) {
-		//	if (prey.PreyCount() > 0) {
-		//		std::size_t shortest_distance = range.radius;
-		//		ecs::EntityId closest_individual = ecs::NULL_ENTITY;
-		//		for (auto id2 : prey.prey) {
-		//			if (id != id2) {
-		//				auto individual = ecs.GetComponent<Position>(id2);
-		//				auto distance = engine::math::Distance(position.center, individual.center);
-		//				if (distance <= shortest_distance) {
-		//					shortest_distance = distance;
-		//					closest_individual = id2;
-		//				}
-		//			}
-		//		}
-		//		if (closest_individual != ecs::NULL_ENTITY) {
-		//			if (shortest_distance <= speed.radius) {
-		//				//eat it
-		//				auto prey_color = ecs.GetComponent<Color>(closest_individual);
-		//				prey_color.color = engine::BLACK;
-		//			} else {
-		//				//chase it
-		//			}
-		//		}
-		//	}
-		//}
+		static auto& cache5 = ecs.AddCache<Prey, Color, Size, Speed, Position, Range, Movement, AI>();
+		for (auto [id, prey, color, size, speed, position, range, movement, ai] : cache5.GetEntities()) {
+			if (prey.PreyCount() > 0) {
+				auto shortest_distance = size.radius + range.radius;
+				auto closest_individual = ecs::NULL_ENTITY;
+				for (auto id2 : prey.prey) {
+					if (id != id2) {
+						auto individual = ecs.GetComponent<Position>(id2);
+						auto individual_size = ecs.GetComponent<Size>(id2);
+						auto distance = engine::math::Distance(position.center, individual.center) - individual_size.radius - size.radius;
+						if (distance <= shortest_distance && ecs.GetComponent<Color>(id2).color != engine::BLACK) {
+							shortest_distance = distance;
+							closest_individual = id2;
+						}
+					}
+				}
+				if (closest_individual != ecs::NULL_ENTITY) {
+					if (shortest_distance < speed.radius) {
+						//eat it
+						auto& prey_color = ecs.GetComponent<Color>(closest_individual);
+						prey_color.color = engine::BLACK;
+						movement.Enable(position.center);
+						ai.Disable();
+					} else {
+						movement.Disable();
+						ai.Enable(ecs.GetComponent<Position>(closest_individual).center);
+						//chase it
+					}
+				} else {
+					movement.Enable(position.center);
+					ai.Disable();
+				}
+			}
+		}
 
 	}
 	void Render() {
@@ -569,7 +564,11 @@ public:
 			engine::TextureManager::DrawCircle(pos.center, size.radius, color.color);
 			auto range = ecs.GetComponentPointer<Range>(id);
 			if (range) {
-				engine::TextureManager::DrawCircle(pos.center, size.radius + range->radius, engine::GREEN);
+				//engine::TextureManager::DrawCircle(pos.center, size.radius + range->radius, engine::GREEN);
+			}
+			auto speed = ecs.GetComponentPointer<Speed>(id);
+			if (speed) {
+				//engine::TextureManager::DrawCircle(pos.center, size.radius + speed->radius, engine::RED);
 			}
 		}
 	}

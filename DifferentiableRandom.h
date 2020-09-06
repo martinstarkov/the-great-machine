@@ -21,6 +21,9 @@ public:
     void SetInitialValue(T val) {
         value = val;
     }
+    void SetValue(T val) {
+        value = val;
+    }
     T GetInitialValue() const {
         return initial_value;
     }

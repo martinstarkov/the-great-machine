@@ -15,6 +15,15 @@ struct Color {
 	}
 };
 
+inline bool operator==(const Color& lhs, const Color& rhs) {
+	return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b && lhs.a == rhs.a;
+}
+
+inline bool operator!=(const Color& lhs, const Color& rhs) {
+	return !(lhs == rhs);
+}
+
+
 #define COLORLESS Color{ 0, 0, 0, 0 }
 #define WHITE Color{ 255, 255, 255, 255 }
 #define BLACK Color{ 0, 0, 0, 255 }

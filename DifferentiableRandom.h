@@ -35,7 +35,7 @@ public:
             // Evaluate the derivative
             provider->Advance(step);
             initial_value = value;
-            value += static_cast<T>(step * (provider->GetInitialValue() + 1.0 / static_cast<T>(level) * (provider->GetValue() - provider->GetInitialValue())));
+            value += static_cast<T>(step * (provider->GetInitialValue() + 1.0 / static_cast<T>(level) * (static_cast<D>(provider->GetValue()) - static_cast<D>(provider->GetInitialValue()))));
             if (value < min)
                 value = min;
             if (value > max)

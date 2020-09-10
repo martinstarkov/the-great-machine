@@ -377,19 +377,32 @@ private:
 
 struct AI {
 	V2_int GetPosition(V2_int current_position, int max_speed) {
-		V2_double direction = (current_position - target_position).unit<double>().opposite();
+		V2_double direction = (current_position - target.GetComponent<Position>().center).unit<double>().opposite();
 		V2_double new_position = static_cast<V2_double>(current_position) + direction * max_speed;
 		return static_cast<V2_int>(new_position);
+
+		//when running away
+		//V2_double direction = (current_position - target.GetComponent<Position>().center).unit<double>();
+		//V2_double new_position = static_cast<V2_double>(current_position) + direction * max_speed;
+		//return static_cast<V2_int>(new_position);
 	}
-	void Enable(V2_int new_target_position) {
-		target_position = new_target_position;
+	void Enable(ecs::Entity new_target) {
+		target = new_target;
 		enabled = true;
 	}
+	void EnableRun(ecs::Entity new_pursuer) {
+		pursuer = new_pursuer;
+		run_enabled = true;
+	}
 	void Disable() { enabled = false; }
+	void DisableRun() { run_enabled = false; }
 	bool IsEnabled() { return enabled; }
+	bool IsRunEnabled() { return run_enabled; }
 private:
 	bool enabled = false;
-	V2_int target_position;
+	bool run_enabled = false;
+	ecs::Entity target;
+	ecs::Entity pursuer;
 };
 
 struct Prey {
@@ -423,13 +436,45 @@ private:
 	std::list<std::string> prey_names;
 };
 
+struct Predator {
+	Predator(std::list<std::string>&& predator_names) : predator_names{ std::move(predator_names) } {}
+	void AddPredator(ecs::Entity entity) {
+		predators.push_back(entity);
+	}
+	void RemovePredator(ecs::Entity entity) {
+		predators.remove(entity);
+	}
+	std::size_t PredatorCount() const {
+		return predators.size();
+	}
+	void AddSpecies(const std::string& name) {
+		predator_names.push_back(name);
+	}
+	/*
+	void RemoveSpecies(const std::string& name) {
+		prey_names.remove(name);
+	} */
+	bool HasSpecies(const std::string& name) const {
+		for (auto& predator_name : predator_names) {
+			if (name.compare(predator_name) == 0) return true;
+		}
+		return false;
+	}
+
+	std::list<ecs::Entity> predators;
+
+private:
+	std::list<std::string> predator_names;
+};
+
 struct Species {
 	Species(std::string&& name) : name{ std::move(name) } {}
 	const std::string name;
 };
 
-constexpr std::size_t RABBITS = 5;
+constexpr std::size_t RABBITS = 10;
 constexpr std::size_t GRASS = 40;
+constexpr std::size_t FOXES = 5;
 
 class GameManager {
 public:
@@ -451,6 +496,7 @@ public:
 		entity.AddComponent<Color>(engine::ORANGE);
 		entity.AddComponent<Movement>(pos, V2_int{ size + speed, size + speed }, V2_int{ size + speed, size + speed });
 		entity.AddComponent<Prey>(std::list<std::string>{ "grass" });
+		//entity.AddComponent<Predator>(std::list<std::string>{ "fox" });
 		return entity;
 	}
 	ecs::Entity MakeGrass(V2_int pos) {
@@ -462,12 +508,31 @@ public:
 		entity.AddComponent<Color>(engine::GREEN);
 		return entity;
 	}
+	ecs::Entity MakeFox(V2_int pos) {
+		static int size = 5;
+		static int speed = 3;
+		static int range = 70;
+		ecs::Entity entity = ecs.CreateEntity();
+		entity.AddComponent<Species>("fox");
+		entity.AddComponent<AI>();
+		entity.AddComponent<Position>(pos);
+		entity.AddComponent<Size>(size);
+		entity.AddComponent<Speed>(speed);
+		entity.AddComponent<Range>(range);
+		entity.AddComponent<Color>(engine::BLUE);
+		entity.AddComponent<Movement>(pos, V2_int{ size + speed, size + speed }, V2_int{ size + speed, size + speed });
+		entity.AddComponent<Prey>(std::list<std::string>{ "rabbit" });
+		return entity;
+	}
 	void Init() {
 		for (auto i = 0; i < RABBITS; ++i) {
 			MakeRabbit(V2_int::Random(0, engine::Game::ScreenWidth() - 1, 0, engine::Game::ScreenHeight() - 1));
 		}
 		for (auto i = 0; i < GRASS; ++i) {
 			MakeGrass(V2_int::Random(0, engine::Game::ScreenWidth() - 1, 0, engine::Game::ScreenHeight() - 1));
+		}
+		for (auto i = 0; i < FOXES; ++i) {
+			MakeFox(V2_int::Random(0, engine::Game::ScreenWidth() - 1, 0, engine::Game::ScreenHeight() - 1));
 		}
 	}
 	void Update() {
@@ -505,7 +570,8 @@ public:
 				if (entity.HasComponent<Prey>()) {
 					auto& prey = entity.GetComponent<Prey>();
 					for (auto entity2 : range.interactions) {
-						if (entity != entity2) {
+						if (entity != entity2 && entity2 != ecs::null) {
+							assert(entity2.HasComponent<Species>() && "Nicole's Check");
 							auto& individual = entity2.GetComponent<Species>();
 							if (species.name.compare(individual.name)) {
 								//LOG(species.name << " interacting with " << individual.name);
@@ -529,12 +595,16 @@ public:
 				ecs::Entity closest_individual = ecs::null;
 				for (auto entity2 : prey.prey) {
 					if (entity != entity2) {
-						auto individual = entity2.GetComponent<Position>();
-						auto individual_size = entity2.GetComponent<Size>();
-						auto distance = engine::math::Distance(position.center, individual.center) - individual_size.radius - size.radius;
-						if (distance <= shortest_distance) { //used to check if color was not black entity2.GetComponent<Color>().color != engine::BLACK
-							shortest_distance = distance;
-							closest_individual = entity2;
+						if (entity2.HasComponent<Size>()) { //checks that component hasn't been "deleted"
+							assert(entity2.HasComponent<Position>() && "Nicole's Check");
+							assert(entity2.HasComponent<Size>() && "Nicole's Check");
+							auto individual = entity2.GetComponent<Position>();
+							auto individual_size = entity2.GetComponent<Size>();
+							auto distance = engine::math::Distance(position.center, individual.center) - individual_size.radius - size.radius;
+							if (distance <= shortest_distance) { //used to check if color was not black entity2.GetComponent<Color>().color != engine::BLACK
+								shortest_distance = distance;
+								closest_individual = entity2;
+							}
 						}
 					}
 				}
@@ -543,7 +613,7 @@ public:
 						//eat it
 						prey.RemovePrey(closest_individual);
 						range.RemoveInteraction(closest_individual);
-						closest_individual.RemoveComponent<Position>();
+						closest_individual.RemoveComponent<Size>();
 						//closest_individual.Destroy();
 						//auto& prey_color = closest_individual.GetComponent<Color>();
 						//prey_color.color = engine::BLACK;
@@ -551,7 +621,7 @@ public:
 						ai.Disable();
 					} else {
 						movement.Disable();
-						ai.Enable(closest_individual.GetComponent<Position>().center);
+						ai.Enable(closest_individual);
 						//chase it
 					}
 				} else {
